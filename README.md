@@ -1,80 +1,51 @@
 # mcp-audit-wrapper
 
-Transparent audit logging HOF for MCP tool calls. Storage-agnostic, zero dependencies.
+> Transparent audit logging for any async operation.
 
-## Why This Exists
+[![CI](https://github.com/protectyr-labs/mcp-audit-wrapper/actions/workflows/ci.yml/badge.svg)](https://github.com/protectyr-labs/mcp-audit-wrapper/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue.svg)](https://www.typescriptlang.org/)
 
-When building MCP servers, every tool call should be logged for debugging and compliance.
-But scattering `await log(...)` calls in every handler is error-prone and clutters business
-logic. This higher-order function wraps any async handler with automatic audit logging —
-success or failure, with sanitized parameters and summarized results.
+Wraps any async function with automatic audit logging. Sanitizes parameters (redacts secrets, truncates large values), summarizes results, and logs success or failure. Storage-agnostic -- bring your own logger.
 
-
-## Demo
-
-Run the example to see audit logging in action:
+## Quick Start
 
 ```bash
-npx tsx examples/basic.ts
+npm install @protectyr-labs/mcp-audit-wrapper
 ```
 
-```
---- Successful call ---
-{
-  "userId": "user-42",
-  "toolName": "get_user",
-  "parameters": {
-    "userId": "u-123",
-    "includeProfile": true
-  },
-  "result": {
-    "success": true,
-    "data": {
-      "type": "object",
-      "keys": ["id", "name", "email"]
-    }
-  },
-  "timestamp": "2026-04-12T14:30:00.000Z"
-}
-Result: { id: 'u-123', name: 'Alice', email: 'alice@example.com' }
+```typescript
+import { executeWithAudit, createConsoleLogger } from '@protectyr-labs/mcp-audit-wrapper';
 
---- Failed call ---
-{
-  "userId": "user-42",
-  "toolName": "delete_user",
-  "parameters": {
-    "userId": "u-999"
-  },
-  "result": {
-    "success": false,
-    "error": "User not found"
-  },
-  "timestamp": "2026-04-12T14:30:00.001Z"
-}
-Caught error: User not found
+const logger = createConsoleLogger();
 
---- Sanitization ---
-Sanitized: {
-  "username": "alice",
-  "apiToken": "[REDACTED]",
-  "password": "[REDACTED]",
-  "bio": "xxxxxxxxxxxxxxxxxxxx...[truncated]",
-  "tags": "[Array with 15 items]"
-}
-
---- Summarization ---
-Array: { type: 'array', count: 5 }
-Object: { type: 'object', keys: [ 'id', 'name', 'data' ] }
-Primitive: 42
-Null: null
+const result = await executeWithAudit(
+  logger,
+  'user-123',          // userId
+  'get_customer',      // toolName
+  { customerId: 'c-1' },
+  async () => db.customers.findOne('c-1')
+);
+// Logs: { userId, toolName, parameters, result: { success: true, data: {...} }, timestamp }
 ```
 
-Sensitive parameters (`apiToken`, `password`) are automatically redacted. Long strings are
-truncated. Large arrays are summarized. Results are compacted for storage efficiency.
+## Why This?
 
-## Custom Logger Example
+- **One HOF, zero boilerplate** -- wrap any handler in one line, get full audit trail
+- **Smart sanitization** -- redacts keys containing `password`, `token`, `secret`; truncates strings > 500 chars; summarizes arrays > 10 items
+- **Errors logged, then rethrown** -- audit is observability, not control flow
+- **Storage-agnostic** -- implement `AuditLogger` interface for your backend (Postgres, file, console)
 
-Implement `AuditLogger` to persist records to any storage backend:
+## API
+
+| Export | Description |
+|--------|-------------|
+| `executeWithAudit(logger, userId, toolName, params, handler)` | Wrap an async handler with audit logging |
+| `sanitizeParameters(params)` | Redact secrets and truncate large values |
+| `summarizeResult(result)` | Compact summary for storage (arrays, objects, primitives) |
+| `createConsoleLogger()` | Dev-mode console logger; implement `AuditLogger` for production |
+
+## Custom Logger
 
 ```typescript
 import type { AuditLogger, AuditEntry } from '@protectyr-labs/mcp-audit-wrapper';
@@ -90,64 +61,16 @@ const pgLogger: AuditLogger = {
 };
 ```
 
-## Install
+## Limitations
 
-```bash
-npm install @protectyr-labs/mcp-audit-wrapper
-```
-
-Or install from GitHub:
-```bash
-npm install github:protectyr-labs/mcp-audit-wrapper
-```
-
-## Quick Start
-
-```typescript
-import { executeWithAudit, createConsoleLogger } from '@protectyr-labs/mcp-audit-wrapper';
-
-const logger = createConsoleLogger();
-
-const result = await executeWithAudit(
-  logger,
-  'user-123',
-  'get_customer',
-  { customerId: 'cust-456' },
-  async () => db.customers.findOne('cust-456')
-);
-// Logs: { userId, toolName, parameters, result: { success: true, data: {...} }, timestamp }
-```
-
-## API
-
-### `executeWithAudit<T>(logger, userId, toolName, parameters, handler)`
-
-Wraps an async handler with audit logging. Logs on success and failure. Rethrows errors after logging.
-
-### `sanitizeParameters(params)`
-
-Redacts sensitive keys (password, token, secret, key, credential). Truncates strings > 500 chars. Summarizes arrays > 10 items.
-
-### `summarizeResult(result)`
-
-Compact summaries for audit storage: arrays become `{ type: 'array', count: N }`, objects become `{ type: 'object', keys: [...] }`.
-
-### `createConsoleLogger()`
-
-Simple console logger for development. Implement `AuditLogger` interface for production storage.
-
-### `AuditLogger` interface
-
-```typescript
-interface AuditLogger {
-  log(entry: AuditEntry): Promise<void>;
-}
-```
-
-Implement this to persist audit records to your database, file system, or logging service.
+- No async timeout on audit writes (slow storage blocks the handler)
+- Parameter sanitization is shallow (does not recurse into nested objects)
+- Redaction by key name only -- values are not inspected
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for design decisions.
 
+Used by [mcp-exec-team](https://github.com/protectyr-labs/mcp-exec-team) for debate audit trails.
+
 ## License
 
-MIT — extracted from Protectyr's production MCP server.
+MIT
