@@ -36,6 +36,32 @@ const result = await executeWithAudit(
 - **Errors logged, then rethrown** -- audit is observability, not control flow
 - **Storage-agnostic** -- implement `AuditLogger` interface for your backend (Postgres, file, console)
 
+## Use Cases
+
+**Compliance and regulated industries** — Healthcare, finance, legal —
+any system handling sensitive data needs audit trails. Wrap your data
+access functions to log who accessed what, when, without storing the
+actual sensitive content in audit logs.
+
+**Incident response and forensics** — When investigating a security
+incident, every analyst action must be traceable. This wrapper creates
+an automatic chain of custody: who ran which tool, with what parameters,
+and whether it succeeded or failed.
+
+**MCP server observability** — You've built an MCP server with 10+ tools.
+Users are calling them via Claude. You need to know which tools are used
+most, which fail, and what parameters people pass — without reading
+every conversation.
+
+**Multi-tenant SaaS** — Multiple organizations share the same tools.
+Audit logs track which user from which org performed each action.
+The userId parameter ties every operation to an identity.
+
+**PII-safe logging** — Standard logging captures everything, including
+passwords and tokens in parameters. This wrapper automatically redacts
+sensitive fields so your logs are safe to store, search, and share
+with auditors.
+
 ## API
 
 | Export | Description |
